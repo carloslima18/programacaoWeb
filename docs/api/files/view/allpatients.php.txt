@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>indexDentist</title>
+    <link rel="stylesheet" type="text/css" href="http://localhost/clinica/css2/deletepatient.css"/>
+</head>
+<body>
+<div id="interface" class="container">
+    <?php
+    foreach ($this->session->getFlashBag()->all() as $type => $messages) {
+        foreach ($messages as $message) {
+            echo '<div class="alert alert-'.$type.'">'.$message.'</div>';
+        }
+    }
+    ?>
+    <h1>Informações do paciente.</h1><br>
+    <h3><?php
+        foreach ($this->consults as $obj){
+            echo 'PACIENTE: '.$obj->getName()."<BR>";
+            echo 'Data de nascimento: '.$obj->getDateBirth()."<BR>";
+            echo 'CPF: '.$obj->getCPF()."<BR>";
+            echo 'RG: '.$obj->getRG()."<BR>";
+            echo 'Endereço: '.$obj->getAddress()."<BR>";
+            echo 'Telefone: '.$obj->getPhone()."<BR>";
+            echo 'Email: '.$obj->getEmail()."<BR>";
+            echo 'Sexo: '.$obj->getSex()."<BR><BR><BR>";
+        }?>
+    </h3><br>
+</div>
+<a href="/clinica/front.php/data">voltar</a><br/><br/>
+</body>
+</html>

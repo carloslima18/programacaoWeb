@@ -1,0 +1,557 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: Genivaldo
+ * Date: 17/02/2017
+ * Time: 14:28
+ */
+namespace clinic\controller;
+use clinic\errors\InvalidArgument;
+use clinic\validators\date\dates\DateDMY;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\Session;
+use clinic\person\patient\Patient;
+use clinic\validators\cpf\Cpf;
+
+class ClinicController {
+    protected $session;
+    protected $patient;
+    protected $consults = [];
+    public function allpatientsAction(){
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        $this->consults = $this->loadFilesObjects();
+        if(count($this->consults) == 0){
+            $this->session->getFlashBag()->add('info','Nenhum paciente cadastrado');
+            return $this->render_view('data');
+        }
+        $this->session->set('consults', $this->consults);
+        return $this->render_view('allpatients');
+    }
+
+    public function showpatientAction(){
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        return $this->render_view('showpatient');
+    }
+    public function showdatapatientAction(Request $request){
+        $this->session= new Session();
+        $error='';
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST') {
+
+            if(!$this->patient){
+                try {
+
+                    $this->patient = $this->searchObject($request->request->get('cpf'));
+                    $this->session->getFlashBag()->add('info','Paciente encontrado');
+                    $this->session->set('patient', $this->patient);
+                    return $this->render_view('showdatapatient');
+                }
+                catch ( InvalidArgument $e){
+                    $error=$e->getMessage();
+                }
+                catch ( \Throwable $e ){
+                    $error= 'errorrrr !!!!';
+                }
+            }
+        }
+        $this->session->getFlashBag()->add('info','Paciente não encontrado');
+        ob_start();
+        include sprintf(__DIR__ . '/../view/showpatient.php');
+        return new Response( ob_get_clean());
+    }
+    public function deletepatientAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST') {
+            try{
+                $cpf = new Cpf($request->request->get('cpf'));
+                $cpf = $cpf->getFormattedCpf();
+                $patient = $this->searchObject($cpf);
+                $patient->delete();
+                $this->session->getFlashBag()->add('info','Paciente apagado com sucesso!');
+                return $this->render_view('deletepatient');
+            }
+            catch ( InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch ( \Throwable $e ){
+                $error= 'errorrrr !!!!';
+            }
+
+            $this->session->getFlashBag()->add('info','Paciente não encontrado!');
+
+        }
+        ob_start();
+        include sprintf(__DIR__.'/../view/deletepatient.php');
+        return new Response( ob_get_clean());
+    }
+
+    /**
+     * mostra todas as consultas referentes ao dia pesquisado
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function allconsultsAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST') {
+            try{
+                $date = new DateDMY($request->request->get('date'));
+                $date = $date->getFormattedDate();
+                $allPatients = $this->loadFilesObjects();
+                foreach ($allPatients as $patient) {
+                    $tmp = $patient->getName().' '.$patient->getConsultDay($date);
+                    if ($patient->getConsultDay($date) != "") {
+                        array_push($this->consults, $tmp);
+                    }
+                }
+                if(count($this->consults) == 0){
+                    $this->session->getFlashBag()->add('info', 'Data sem consultas marcadas');
+                }
+                else{
+                    $this->session->set('consults', $this->consults);
+                }
+                ob_start();
+                include sprintf(__DIR__.'/../view/allconsults.php');
+                return new Response( ob_get_clean());
+            }
+            catch ( InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch ( \Throwable $e ){
+                $error= 'errorrrr !!!!';
+            }
+        }
+        ob_start();
+        include sprintf(__DIR__.'/../view/allconsults.php');
+        return new Response( ob_get_clean());
+    }
+    /**
+     * apresenta consulta pesquisada pela data
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function showdayAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST') {
+            try{
+                $cpf = new Cpf($request->request->get('cpf'));
+                $cpf = $cpf->getFormattedCpf();
+                $date = new DateDMY($request->request->get('date'));
+                $date = $date->getFormattedDate();
+                $this->patient = $this->searchObject($cpf);
+                if (!$this->patient) {
+                    $this->session->getFlashBag()->add('info', 'Paciente inexistente');
+                    return $this->render_view('showconsultday');
+                }
+                if($this->patient->getDay() == null){
+                    $this->session->getFlashBag()->add('info', 'Nenhuma consulta para esse dia');
+                    return $this->render_view('showconsultday');
+                }
+                $this->patient->getConsultDay($date);
+                $this->session->set('patient', $this->patient);
+                return $this->render_view('showday');
+            }
+            catch (InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch (\Throwable $e) {
+                $error = '';
+            }
+            $this->session->getFlashBag()->add('info',"$error");
+        }
+        ob_start();
+        include sprintf(__DIR__.'/../view/showconsultday.php');
+        return new Response( ob_get_clean());
+    }
+
+    /**
+     * apresenta todas as consultas referentes ao paciente pesquisado
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function showallAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST'){
+            try {
+                $cpf = new Cpf($request->request->get('cpf'));
+                $this->patient = $this->searchObject($cpf->getFormattedCpf());
+                if (!$this->patient) {
+                    $this->session->getFlashBag()->add('info', 'Paciente inexistente');
+                    //return $this->render_view('showconsultall');
+                    ob_start();
+                    include sprintf(__DIR__ . '/../view/showconsultall.php');
+                    return new Response( ob_get_clean());
+                }
+                $this->session->set('patient', $this->patient);
+                ob_start();
+                include sprintf(__DIR__ . '/../view/showall.php');
+                return new Response( ob_get_clean());
+                //return $this->render_view('showall');
+            }
+            catch ( InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch ( \Throwable $e ){
+                $error= 'errorrrr !!!!';
+            }
+
+        }
+        ob_start();
+        include sprintf(__DIR__ . '/../view/showconsultall.php');
+        return new Response( ob_get_clean());
+        //return new RedirectResponse('/clinica/front.php/showconsultall');
+    }
+
+    /**
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function showconsultallAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        $this->session->getFlashBag()->add('info','');
+        //return $this->render_view('');
+        ob_start();
+        include sprintf(__DIR__.'/../view/showconsultall.php');
+        return new Response( ob_get_clean());
+    }
+
+    /**
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function showconsultdayAction(Request $request){
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        $this->session->getFlashBag()->add('info','');
+        return $this->render_view('showconsultday');
+    }
+
+    /**
+     * troca o valor de login para anoymous
+     * @return RedirectResponse
+     */
+    public function exitAction(){
+        $this->session = new Session();
+        $this->session->clear();
+        $this->session->getFlashBag()->add('info','Deslogado com sucesso');
+        return new RedirectResponse('/clinica/front.php/index');
+    }
+    /**
+     * apaga consulta passada pela data e cpf
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function deleteAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST'){
+            try{
+                $cpf = new Cpf($request->request->get('cpf'));
+                $cpf = $cpf->getFormattedCpf();
+                $date = new DateDMY($request->request->get('date'));
+                $date = $date->getFormattedDate();
+                $patient = $this->searchObject($cpf);
+                if($patient->getCpf() === $cpf){
+                    if($patient->deleteConsult($date)) {
+                        $patient->save();
+                        $this->session->getFlashBag()->add('info', 'Consulta apagada com sucesso');
+                        ob_start();
+                        include sprintf(__DIR__.'/../view/deleteconsult.php');
+                        return new Response( ob_get_clean());
+                    }
+                }
+            }
+            catch (InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch (\Throwable $e){
+                $error= '';
+            }
+            $this->session->getFlashBag()->add('info','Consulta não encontrado');
+        }
+        ob_start();
+        include sprintf(__DIR__.'/../view/deleteconsult.php');
+        return new Response( ob_get_clean());
+    }
+    /**
+     * registra a consulta no objeto
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function consultAction(Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST')
+        {
+            try {
+                $cpf =new Cpf($request->request->get('cpf'));
+                $date = new DateDMY($request->request->get('date'));
+                $this->patient = $this->searchObject($cpf->getFormattedCpf());
+                if(!$this->patient){
+                    $this->session->getFlashBag()->add('info','Paciente não inscrito');
+                    ob_start();
+                    include sprintf(__DIR__.'/../view/consult.php');
+                    return new Response( ob_get_clean());
+                }
+                $tmp = $this->patient->registerConsult($request->request->get('dentist'), $date->getFormattedDate(),
+                        $request->request->get('hour'), $request->request->get('minute'));
+                if($tmp){
+                    $this->session->getFlashBag()->add('info','Data ja foi marcada');
+                    ob_start();
+                    include sprintf(__DIR__.'/../view/consult.php');
+                    return new Response( ob_get_clean());
+                }
+                $this->patient->save();
+                $this->patient->getConsultDay($date->getFormattedDate());
+                $this->session->set('patient', $this->patient);
+                $this->session->getFlashBag()->add('info','Consulta marcada com sucesso');
+
+                ob_start();
+                include sprintf(__DIR__.'/../view/showday.php');
+                return new Response( ob_get_clean());
+            }
+            catch (InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch (\Throwable $e){
+                $error= 'error !!!!';
+            }
+        }
+        ob_start();
+        include sprintf(__DIR__.'/../view/consult.php');
+        return new Response( ob_get_clean());
+    }
+    /**
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function dataAction(Request $request){
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        $this->session->getFlashBag()->add('info','');
+        return $this->render_view('data');
+    }
+    /**
+     * registra novo paciente
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function  registerAction ( Request $request){
+        $error='';
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+        if ( $request->getMethod()=='POST')
+        {   try {
+            $cpf = new Cpf($request->request->get('cpf'));
+                $test = $this->searchObject($cpf->getFormattedCpf());
+                if ($test) {
+                    $this->patient = $test;
+                    $this->session->set('patient', $this->patient);
+                    $this->session->getFlashBag()->add('info', 'Paciente ja inscrito');
+                    return $this->render_view('registerinfo');
+                }
+            }
+            catch ( InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch ( \Throwable $e ){
+                $error= 'errorrrr !!!!';
+            }
+            try {
+
+
+                $this->patient = new Patient($request->request->get('firstName'), $request->request->get('lastName'),
+                    $request->request->get('rg'),$request->request->get('rua'),$request->request->get('numero'),
+                    $request->request->get('complemento'),$request->request->get('bairro'),$request->request->get('cidade'),
+                    $request->request->get('estado'),$request->request->get('cep'),$request->request->get('date'),
+                    $request->request->get('cpf'),$request->request->get('phone'),$request->request->get('sex'),
+                    $request->request->get('email'));
+                $this->patient->save();
+                $this->session->set('patient', $this->patient);
+                $this->session->getFlashBag()->add('info','Paciente cadastrado com sucesso');
+                return $this->render_view('registerinfo');
+            }
+            catch ( InvalidArgument $e){
+                $error=$e->getMessage();
+            }
+            catch ( \Throwable $e ){
+                $error= 'errorrrr !!!!';
+            }
+        }
+        ob_start();
+        include sprintf(__DIR__ . '/../view/register.php');
+        return new Response( ob_get_clean());
+    }
+    public function registerinfoAction(){
+        $this->session= new Session();
+        if(!$this->access()){
+            $this->session->getFlashBag()->add('info','Área restrita');
+            return new RedirectResponse('/clinica/front.php/index');
+        }
+       return $this->render_view('registerinfo');
+    }
+    /**
+     * contem todos logins autorizados na rota especifica
+     * @return bool true para acesso liberado, false para acesso negado
+     */
+    public function access(){
+        $permission = ['admin'];
+        $this->session= new Session();
+        $user = $this->session->get('user');
+        if ( !in_array($user,$permission)){
+            return false;
+        }
+        return true;
+    }
+    /**
+     * @param Request $request
+     * @return Response
+     */
+    public function  indexAction ( Request $request)
+    {
+        $this->session = new Session();
+        $this->session->getFlashBag()->add('info','');
+        return $this->render_view('index');
+    }
+    /**
+     * verifica login e senha
+     * @param Request $request
+     * @return RedirectResponse|Response
+     */
+    public function  loginAction ( Request $request)
+    {
+        $this->session = new Session();
+        if($request->getMethod()=='POST'){
+            $user=['admin'=>'bfd98d1cce6e1aac1f0daa0bfaa7928653bfc3b9fbc950509c533c969dd6a9c8'];
+            foreach($user as $login=>$pwd){
+                if($request->request->get('uname')==$login &&
+                hash("sha256",$request->request->get('psw').'5wh4xfz31')==$pwd){
+                    $this->session->set('user',$login);
+                    $this->session->getFlashBag()->add('info','Logado com sucesso');
+                    return new RedirectResponse('/clinica/front.php/index');
+                }
+            }
+            $this->session->getFlashBag()->add('info','Senha ou Usuário incorretos');
+            return $this->render_view('login');
+        }
+        return $this->render_view('login');
+    }
+    /**
+     * @param string $cpf
+     * @return mixed|null verifica a existencia do objeto e caso encontre, retorna o mesmo
+     */
+    public function searchObject(string $cpf){
+        $patient = $this->loadFilesObjects();
+        $cpf = new Cpf($cpf);
+        $cpf = $cpf->getFormattedCpf();
+        foreach ($patient as $obj){
+            if (strcmp($obj->getCpf(), $cpf) === 0){
+                return $obj;
+            }
+        }
+        return null;
+    }
+    /**
+     * carrega todos os objetos no arquivo Patient.txt para um array
+     * @return array
+     */
+    public function loadFilesObjects():array
+    {
+        $contents=@file_get_contents("../files/Patient.txt");
+        $vector = [];
+        if(!$contents){
+            return $vector;
+        }
+        $objects=explode(PHP_EOL,$contents);
+        foreach ($objects as $obj){
+            array_push($vector, unserialize($obj));
+            //
+        }
+        array_pop($vector);
+        return $vector;
+    }
+    /**
+     * @param string $route
+     * @return Response
+     */
+
+    public function agendaAction(Request $request)
+    {
+        /*if ($request->getMethod() == 'GET') {
+
+            $agendados = new Agenda($request->request->get('nome'), $request->request->get('numero'), $request->request->get('data'));
+            $agendados->save();
+
+            $this->session = new Session();
+            $this->session->getFlashBag()->add('warning', 'dados gravados com fodidamente.');
+        }*/
+        return $this->render_view('agenda');
+    }
+
+    public function IframeAction(Request $request)
+    {
+        return $this->render_view('Iframe');
+    }
+
+
+    public function render_view(string $route)
+    {
+        ob_start();
+        include sprintf(__DIR__ . "/../view/$route.php");
+        return new Response(ob_get_clean());
+    }
+}

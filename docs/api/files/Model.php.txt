@@ -1,0 +1,53 @@
+<?php
+/**
+ * Created by PhpStorm.
+ * User: Genivaldo
+ * Date: 17/02/2017
+ * Time: 20:12
+ */
+declare (strict_types=1);
+namespace clinic;
+abstract class Model{
+
+    public function save():int
+    {
+        $contents=@file_get_contents("../files/".$this->getClassName().'.txt');
+        if (!($contents===FALSE)) {
+            $objects = explode(PHP_EOL, $contents);
+            foreach ($objects as &$obj) {
+                if (!$obj)  break;
+                $serial = unserialize($obj);
+                $attribute = $this->getIdAttribute();
+                if ($serial->$attribute == $this->$attribute) {
+                    $obj = serialize($this);
+                    return file_put_contents("../files/".$this->getClassName() . '.txt', implode(PHP_EOL, $objects));
+                }
+            }
+        }
+        return file_put_contents("../files/".$this->getClassName().'.txt',serialize($this).PHP_EOL,FILE_APPEND);
+    }
+    public function delete()
+    {
+        $contents=file_get_contents("../files/".$this->getClassName().'.txt');
+        $contents=str_replace(serialize($this).PHP_EOL,'',$contents);
+        file_put_contents("../files/".$this->getClassName().'.txt',$contents) ;
+    }
+    static function load(int $id)
+    {
+        $contents=@file_get_contents("../files/".static::getClassName().'.txt');
+        $objects=explode(PHP_EOL,$contents);
+        foreach ($objects as $obj){
+            if (!$obj)  break;
+            $serial=unserialize($obj);
+            $attribute = static::getIdAttribute();
+            if ( $id == $serial->$attribute){
+                return $serial;
+            }
+        }
+        return null;
+    }
+
+    abstract public static function getClassName();
+    abstract public static function getIdAttribute();
+
+}
